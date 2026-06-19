@@ -7,6 +7,13 @@
 <style>
   /* ===== Global Reset & Base Styles ===== */
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* True viewport height, kept in sync with JS (window.innerHeight) below.
+     Plain 100vh is unreliable on mobile Safari/Chrome, since it's based on
+     the viewport with toolbars hidden, not what's actually visible -
+     causing content to be pushed off-screen and clipped. */
+  :root {
+    --app-height: 100vh;
+  }
   html, body {
     height: 100%;
     overflow: hidden; /* The whole game fits on one screen - no scrolling */
@@ -23,7 +30,7 @@
      right side is the full drawn-numbers board. */
   .app {
     width: 100vw;
-    height: 100vh;
+    height: var(--app-height);
     display: grid;
     grid-template-columns: 1fr 1.3fr;
   }
@@ -267,7 +274,7 @@
     .app {
       grid-template-columns: 1fr;
       grid-template-rows: auto 1fr;
-      height: 100vh;
+      height: var(--app-height);
     }
     .main-panel {
       height: auto;
@@ -540,16 +547,27 @@
     }
   });
 
-  // Re-fit chip sizing whenever the viewport changes - covers phone
-  // rotation, and mobile browsers (like iOS Safari) resizing the visible
-  // viewport as their address bar/toolbar shows or hides.
-  window.addEventListener('resize', fitChipFontSize);
-  window.addEventListener('orientationchange', fitChipFontSize);
+  // ===== Keep --app-height in sync with the REAL visible viewport =====
+  // Plain CSS 100vh is unreliable on mobile browsers (notably iOS Safari):
+  // it's based on the viewport with toolbars hidden, so when the address
+  // bar is showing, 100vh is taller than what's actually visible and the
+  // bottom of the page gets pushed off-screen and clipped. Using the
+  // actual window.innerHeight instead fixes this on any device.
+  function setAppHeight() {
+    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+    fitChipFontSize(); // grid's available space just changed - re-fit chip text
+  }
+
+  // Re-run on anything that can change the visible viewport: rotation,
+  // resizing, and mobile browsers showing/hiding their toolbar.
+  window.addEventListener('resize', setAppHeight);
+  window.addEventListener('orientationchange', setAppHeight);
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', fitChipFontSize);
+    window.visualViewport.addEventListener('resize', setAppHeight);
   }
 
   // ===== Start the game on page load =====
+  setAppHeight();
   initGame();
 </script>
 
