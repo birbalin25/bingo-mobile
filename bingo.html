@@ -212,9 +212,13 @@
      large as the screen allows. */
   .number-grid {
     flex: 1 1 auto;
+    min-height: 0; /* allow the grid to shrink to fit, never overflow */
     display: grid;
     grid-auto-flow: column;
-    grid-template-rows: repeat(10, 1fr);
+    /* minmax(0, 1fr): rows are allowed to shrink below their content's
+       natural size, so 10 rows always fit the available height exactly
+       instead of being clipped when content (text) wants more room */
+    grid-template-rows: repeat(10, minmax(0, 1fr));
     gap: 0.6vh 0.6vw;
   }
 
@@ -226,7 +230,10 @@
     align-items: center;
     justify-content: center;
     font-weight: 800;
-    font-size: 5vh;
+    /* Font size is computed in JS from the grid's actual rendered height
+       so all 10 rows always fit on screen, on any device - the vh value
+       here is only a fallback before JS runs. */
+    font-size: var(--chip-font-size, 5vh);
     transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
   }
 
@@ -295,7 +302,7 @@
     .number-grid {
       min-height: 0; /* let the grid shrink to fit the remaining space */
     }
-    .number-chip { font-size: 2.6vh; border-radius: 1.2vw; }
+    .number-chip { font-size: var(--chip-font-size, 2.6vh); border-radius: 1.2vw; }
   }
 </style>
 </head>
@@ -392,6 +399,26 @@
       numberGrid.appendChild(chip);
       chipElements[n] = chip;
     }
+    fitChipFontSize();
+  }
+
+  // ===== Dynamically size the drawn-number chips to fit the screen =====
+  // Measures the grid's actual rendered height (after layout) and derives
+  // a font size so all 10 rows fit on screen without being clipped, on
+  // any device - phone, tablet, or desktop, regardless of browser chrome
+  // (e.g. iOS Safari's address bar) eating into the viewport height.
+  const GRID_ROWS = 10;
+  function fitChipFontSize() {
+    const availableHeight = numberGrid.clientHeight;
+    if (availableHeight <= 0) return; // not laid out yet
+
+    const rowGap = parseFloat(getComputedStyle(numberGrid).rowGap) || 0;
+    const rowHeight = (availableHeight - rowGap * (GRID_ROWS - 1)) / GRID_ROWS;
+
+    // Leave breathing room inside each chip so the glyph never touches
+    // its row's edges.
+    const fontPx = Math.max(8, rowHeight * 0.55);
+    numberGrid.style.setProperty('--chip-font-size', fontPx + 'px');
   }
 
   // ===== Initialize / Reset the game state =====
@@ -512,6 +539,15 @@
       initGame();
     }
   });
+
+  // Re-fit chip sizing whenever the viewport changes - covers phone
+  // rotation, and mobile browsers (like iOS Safari) resizing the visible
+  // viewport as their address bar/toolbar shows or hides.
+  window.addEventListener('resize', fitChipFontSize);
+  window.addEventListener('orientationchange', fitChipFontSize);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', fitChipFontSize);
+  }
 
   // ===== Start the game on page load =====
   initGame();
