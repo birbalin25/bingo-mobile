@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bingo Number Generator</title>
+<style>
+  /* ===== Global Reset & Base Styles ===== */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    overflow: hidden; /* The whole game fits on one screen - no scrolling */
+  }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    color: #222;
+  }
+
+  /* ===== Main App Container =====
+     Fills the entire viewport. Left side (current number + controls)
+     is wider since it's the part viewed from the farthest away;
+     right side is the full drawn-numbers board. */
+  .app {
+    width: 100vw;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1.3fr;
+  }
+
+  /* ===== Left Panel: Roll Control & Current Number ===== */
+  .main-panel {
+    padding: 1.5vh 1.5vw;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(160deg, #fdfbfb, #ebedee);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .title {
+    font-size: 3.2vw;
+    font-weight: 800;
+    color: #1e3c72;
+    letter-spacing: 0.3vw;
+    text-align: center;
+    line-height: 1;
+  }
+
+  .subtitle {
+    color: #555;
+    text-align: center;
+    font-size: 1.1vw;
+    margin-bottom: 0.5vh;
+  }
+
+  /* The huge circular display showing the most recent number.
+     Sized in vmin so it scales with the smaller of width/height
+     and stays a perfect, fully-visible circle on any screen. */
+  .current-number-display {
+    width: 36vmin;
+    height: 36vmin;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #ff6a6a, #c0392b);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1.5vmin 4vmin rgba(192,57,43,0.55);
+    border: 0.6vmin solid #fff;
+    transition: transform 0.3s ease;
+  }
+
+  /* The number itself - made as large as possible so it can be
+     read from across a large hall. */
+  .current-number-display #currentNumberText {
+    /* Fills most of the 36vmin circle without touching its perimeter */
+    font-size: 26vmin;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  /* Pop animation when a new number is rolled */
+  @keyframes popIn {
+    0% { transform: scale(0.4) rotate(-15deg); opacity: 0; }
+    60% { transform: scale(1.15) rotate(5deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  .current-number-display.animate {
+    animation: popIn 0.45s ease;
+  }
+
+  .placeholder-text {
+    font-size: 8vmin !important;
+    font-weight: 600;
+    color: rgba(255,255,255,0.85);
+  }
+
+  /* Stats row showing drawn/remaining counts */
+  .stats {
+    display: flex;
+    gap: 1.5vw;
+  }
+
+  .stat-box {
+    text-align: center;
+    background: #fff;
+    border-radius: 1vw;
+    padding: 1vh 1.8vw;
+    box-shadow: 0 0.4vh 1.2vh rgba(0,0,0,0.08);
+    min-width: 8vw;
+  }
+
+  .stat-box .num {
+    font-size: 2.8vw;
+    font-weight: 800;
+    color: #1e3c72;
+    line-height: 1;
+  }
+
+  .stat-box .label {
+    font-size: 1vw;
+    color: #777;
+    text-transform: uppercase;
+    letter-spacing: 0.1vw;
+  }
+
+  /* ===== Buttons ===== */
+  .btn {
+    border: none;
+    border-radius: 50px;
+    padding: 1.8vh 3vw;
+    font-size: 1.6vw;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+    margin: 0.5vh 0.5vw;
+  }
+
+  .roll-btn {
+    background: linear-gradient(135deg, #27ae60, #1e8449);
+    color: #fff;
+    box-shadow: 0 0.8vh 2vh rgba(39,174,96,0.4);
+  }
+
+  .roll-btn:hover:not(:disabled) {
+    transform: translateY(-3px);
+    box-shadow: 0 1.2vh 2.5vh rgba(39,174,96,0.5);
+  }
+
+  .roll-btn:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .roll-btn:disabled {
+    background: #b0b0b0;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .reset-btn {
+    background: linear-gradient(135deg, #636e72, #2d3436);
+    color: #fff;
+    box-shadow: 0 0.8vh 2vh rgba(0,0,0,0.25);
+  }
+
+  .reset-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 1.2vh 2.5vh rgba(0,0,0,0.35);
+  }
+
+  /* Game over banner */
+  .game-over-msg {
+    background: #c0392b;
+    color: #fff;
+    padding: 1.5vh 2vw;
+    border-radius: 1vw;
+    font-weight: 700;
+    font-size: 1.8vw;
+    text-align: center;
+    animation: popIn 0.5s ease;
+  }
+
+  /* ===== Right Panel: Dashboard of Drawn Numbers =====
+     Fills the rest of the screen edge-to-edge so every number
+     is as large as possible and readable from a distance. */
+  .dashboard {
+    background: #1e3c72;
+    color: #fff;
+    padding: 1.5vh 1.5vw;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .dashboard h2 {
+    font-size: 1.6vw;
+    margin-bottom: 1vh;
+    text-align: center;
+    letter-spacing: 0.1vw;
+    border-bottom: 0.2vh solid rgba(255,255,255,0.2);
+    padding-bottom: 1vh;
+    flex: 0 0 auto;
+  }
+
+  /* Numbers are pre-populated and laid out in columns of 10:
+     col1=1-10, col2=11-20, ... col8=71-75.
+     The grid fills all remaining space so every chip is as
+     large as the screen allows. */
+  .number-grid {
+    flex: 1 1 auto;
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(10, 1fr);
+    gap: 0.6vh 0.6vw;
+  }
+
+  .number-chip {
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.35);
+    border-radius: 0.8vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 5vh;
+    transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+  }
+
+  /* Drawn numbers fill in green */
+  .number-chip.drawn {
+    background: #27ae60;
+    color: #fff;
+  }
+
+  /* The number drawn immediately before the latest one - light red */
+  .number-chip.previous {
+    background: #f1948a;
+    color: #fff;
+  }
+
+  /* The most recently drawn number - red, emphasized */
+  .number-chip.latest {
+    background: #e74c3c;
+    color: #fff;
+    transform: scale(1.12);
+    box-shadow: 0 0.6vh 1.6vh rgba(231,76,60,0.6);
+    z-index: 1;
+  }
+
+  /* ===== Responsive Design (smaller / portrait screens) ===== */
+  @media (max-width: 800px) {
+    /* On phones, stack the two panels vertically but keep the whole
+       game confined to exactly one screen height (no scrolling needed) -
+       sizes below are based on vh/vw fractions of that fixed budget. */
+    html, body { overflow: hidden; }
+    .app {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+      height: 100vh;
+    }
+    .main-panel {
+      height: auto;
+      padding: 1.5vh 3vw;
+      gap: 0.8vh;
+    }
+    .dashboard {
+      height: auto;
+      min-height: 0; /* allow flex child to shrink instead of overflowing */
+      padding: 1vh 2vw;
+    }
+    .title { font-size: 7vw; }
+    .subtitle { font-size: 3vw; margin-bottom: 0; }
+
+    /* Circle is now sized off vh, since vertical space is the scarce
+       resource once stacked on top of the dashboard */
+    .current-number-display {
+      width: 30vh;
+      height: 30vh;
+    }
+    .current-number-display #currentNumberText {
+      font-size: 22vh;
+    }
+    .stats { gap: 3vw; }
+    .stat-box { padding: 0.6vh 3vw; min-width: 20vw; }
+    .stat-box .num { font-size: 5vw; }
+    .stat-box .label { font-size: 2.2vw; }
+    .btn { font-size: 3.5vw; padding: 1.2vh 4vw; }
+    .game-over-msg { font-size: 3.5vw; padding: 1vh 3vw; }
+
+    .dashboard h2 { font-size: 3.5vw; margin-bottom: 0.6vh; padding-bottom: 0.6vh; }
+    .number-grid {
+      min-height: 0; /* let the grid shrink to fit the remaining space */
+    }
+    .number-chip { font-size: 2.6vh; border-radius: 1.2vw; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ===== Left Panel: Controls and Current Number ===== -->
+  <div class="main-panel">
+    <div class="title">BINGO</div>
+    <div class="subtitle">Number Generator (1 – 75)</div>
+
+    <!-- Big circular display for the most recently rolled number -->
+    <div class="current-number-display" id="currentNumberDisplay">
+      <span class="placeholder-text" id="currentNumberText">?</span>
+    </div>
+
+    <!-- Stats: drawn count and remaining count -->
+    <div class="stats">
+      <div class="stat-box">
+        <div class="num" id="drawnCount">0</div>
+        <div class="label">Drawn</div>
+      </div>
+      <div class="stat-box">
+        <div class="num" id="remainingCount">75</div>
+        <div class="label">Remaining</div>
+      </div>
+    </div>
+
+    <!-- Roll and Reset buttons -->
+    <div>
+      <button class="btn roll-btn" id="rollBtn">🎲 Roll</button>
+      <button class="btn reset-btn" id="resetBtn">↺ Reset Game</button>
+    </div>
+
+    <!-- Game over message, shown only when all numbers are drawn -->
+    <div class="game-over-msg" id="gameOverMsg" style="display:none;">
+      🏁 Game Over - All Numbers Drawn
+    </div>
+  </div>
+
+  <!-- ===== Right Panel: Dashboard of all drawn numbers ===== -->
+  <div class="dashboard">
+    <h2>Drawn Numbers</h2>
+    <div class="number-grid" id="numberGrid"></div>
+  </div>
+
+</div>
+
+<script>
+  // ===========================================================
+  // Bingo Number Generator Logic
+  // ===========================================================
+
+  const MAX_NUMBER = 75; // Standard Bingo range is 1-75
+  const ROLL_COOLDOWN_MS = 4000; // Minimum time between accidental double rolls
+
+  // Timestamp (ms) of the last accepted roll, used to debounce rapid clicks
+  let lastRollTime = 0;
+  let cooldownTimer = null;
+
+  // Pool of numbers still available to be drawn.
+  // Using an array we shrink via swap-removal keeps every remaining
+  // number equally likely to be picked (unbiased Fisher-Yates style draw).
+  let availableNumbers = [];
+
+  // History of numbers drawn so far, in the order they were rolled.
+  let drawnNumbers = [];
+
+  // ===== DOM References =====
+  const rollBtn = document.getElementById('rollBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const currentNumberDisplay = document.getElementById('currentNumberDisplay');
+  const currentNumberText = document.getElementById('currentNumberText');
+  const drawnCountEl = document.getElementById('drawnCount');
+  const remainingCountEl = document.getElementById('remainingCount');
+  const numberGrid = document.getElementById('numberGrid');
+  const gameOverMsg = document.getElementById('gameOverMsg');
+
+  // Map of number -> its chip element, built once so we can toggle
+  // classes on individual chips instead of re-rendering the whole grid.
+  const chipElements = {};
+
+  // ===== Build the static 1-75 grid, laid out in columns of 10 =====
+  // grid-auto-flow: column fills column-by-column, so as long as we
+  // append elements in row-major order (1,2,3...10, 11,12...20, ...)
+  // CSS places 1-10 in column 1, 11-20 in column 2, etc.
+  function buildGrid() {
+    numberGrid.innerHTML = '';
+    for (let n = 1; n <= MAX_NUMBER; n++) {
+      const chip = document.createElement('div');
+      chip.className = 'number-chip';
+      chip.textContent = n;
+      numberGrid.appendChild(chip);
+      chipElements[n] = chip;
+    }
+  }
+
+  // ===== Initialize / Reset the game state =====
+  function initGame() {
+    // Refill the pool with numbers 1..75
+    availableNumbers = [];
+    for (let i = 1; i <= MAX_NUMBER; i++) {
+      availableNumbers.push(i);
+    }
+    drawnNumbers = [];
+
+    // Reset UI elements
+    currentNumberText.textContent = '?';
+    currentNumberDisplay.classList.remove('animate');
+    gameOverMsg.style.display = 'none';
+    rollBtn.disabled = false;
+
+    // Clear any pending cooldown so a fresh game can be rolled immediately
+    lastRollTime = 0;
+    if (cooldownTimer) clearTimeout(cooldownTimer);
+
+    buildGrid();
+    updateStats();
+  }
+
+  // ===== Draw a fair, unbiased random number from the remaining pool =====
+  function drawRandomNumber() {
+    // Math.random() gives a uniform distribution over [0,1),
+    // so every index in availableNumbers has equal probability of selection.
+    const randomIndex = Math.floor(Math.random() * availableNumbers.length);
+    const selectedNumber = availableNumbers[randomIndex];
+
+    // Swap-remove: move the last element into the selected slot, then pop.
+    // This avoids the bias/array-shifting cost of splice while keeping
+    // every remaining number's chance equal on the next draw.
+    const lastIndex = availableNumbers.length - 1;
+    availableNumbers[randomIndex] = availableNumbers[lastIndex];
+    availableNumbers.pop();
+
+    return selectedNumber;
+  }
+
+  // ===== Handle Roll button click =====
+  function handleRoll() {
+    if (availableNumbers.length === 0) return; // Safety guard
+
+    // Debounce: ignore clicks that arrive within the cooldown window so an
+    // accidental double-click (or impatient mashing) never draws two numbers.
+    const now = Date.now();
+    if (now - lastRollTime < ROLL_COOLDOWN_MS) return;
+    lastRollTime = now;
+
+    const number = drawRandomNumber();
+    drawnNumbers.push(number);
+
+    // Update the big central display with animation
+    currentNumberText.textContent = number;
+    currentNumberText.classList.remove('placeholder-text'); // drop the small placeholder sizing
+    currentNumberDisplay.classList.remove('animate');
+    // Force reflow so the animation can replay on consecutive rolls
+    void currentNumberDisplay.offsetWidth;
+    currentNumberDisplay.classList.add('animate');
+
+    updateStats();
+    updateGridHighlights();
+
+    // Check for game over condition
+    if (availableNumbers.length === 0) {
+      rollBtn.disabled = true;
+      gameOverMsg.style.display = 'block';
+      return;
+    }
+
+    // Visually disable the button during the cooldown so the user can see
+    // why a fast second click had no effect, then re-enable it.
+    rollBtn.disabled = true;
+    if (cooldownTimer) clearTimeout(cooldownTimer);
+    cooldownTimer = setTimeout(() => {
+      rollBtn.disabled = false;
+    }, ROLL_COOLDOWN_MS);
+  }
+
+  // ===== Update drawn/remaining counters =====
+  function updateStats() {
+    drawnCountEl.textContent = drawnNumbers.length;
+    remainingCountEl.textContent = availableNumbers.length;
+  }
+
+  // ===== Update chip colors on the pre-built grid =====
+  // Grey (default) = not drawn, Green = drawn, Light red = previous,
+  // Red = most recently drawn.
+  function updateGridHighlights() {
+    const latestNumber = drawnNumbers[drawnNumbers.length - 1];
+    const previousNumber = drawnNumbers[drawnNumbers.length - 2];
+
+    drawnNumbers.forEach((num) => {
+      const chip = chipElements[num];
+      chip.classList.add('drawn');
+      chip.classList.remove('latest', 'previous');
+    });
+
+    if (previousNumber !== undefined) {
+      chipElements[previousNumber].classList.add('previous');
+    }
+    if (latestNumber !== undefined) {
+      chipElements[latestNumber].classList.add('latest');
+    }
+  }
+
+  // ===== Event Listeners =====
+  rollBtn.addEventListener('click', handleRoll);
+  resetBtn.addEventListener('click', () => {
+    // Confirm before wiping progress, since reset cannot be undone
+    const confirmed = window.confirm(
+      'Are you sure you want to reset the game? All drawn numbers will be cleared.'
+    );
+    if (confirmed) {
+      initGame();
+    }
+  });
+
+  // ===== Start the game on page load =====
+  initGame();
+</script>
+
+</body>
+</html>
